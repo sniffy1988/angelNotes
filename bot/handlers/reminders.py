@@ -44,6 +44,11 @@ async def digest_set(
     db_user: User,
     stickers: StickerService,
 ) -> None:
+    if not db_user.is_parent:
+        await state.clear()
+        await stickers.send_mood(message.bot, message.chat.id, "deny")
+        await message.answer(texts.no_access(), reply_markup=main_menu(db_user))
+        return
     text = (message.text or "").strip()
     if text == texts.BTN_CANCEL:
         return

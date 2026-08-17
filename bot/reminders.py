@@ -92,11 +92,12 @@ class ReminderService:
             return None
 
         h, m = map(int, item.start_time.split(":"))
-        # Prefer today's occurrence if weekday matches
         if now.weekday() == item.weekday:
             today = now.replace(hour=h, minute=m, second=0, microsecond=0)
-            return today
-        # Else next upcoming
+            # Keep today's slot while still inside the late-reminder window;
+            # otherwise jump to next week so "за 1 день" keeps working.
+            if today >= now or (now - today) <= timedelta(hours=2):
+                return today
         return next_weekly_occurrence(
             item.weekday, item.start_time, self.settings.tz, now
         )

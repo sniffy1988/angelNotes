@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 import aiosqlite
 
@@ -69,7 +70,9 @@ class ReminderOffset:
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return datetime.now(tz=ZoneInfo("UTC")).replace(microsecond=0).isoformat().replace(
+        "+00:00", "Z"
+    )
 
 
 def _row_user(row: aiosqlite.Row) -> User:

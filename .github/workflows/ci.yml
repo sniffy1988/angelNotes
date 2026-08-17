@@ -21,8 +21,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
       - name: Ruff
-        run: ruff check bot
+        run: ruff check bot tests
 
       - name: Compile
         run: python -m compileall -q bot
