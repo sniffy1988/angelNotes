@@ -13,7 +13,7 @@ services:
     image: adminer:4
     container_name: angelnotes-adminer
     ports:
-      - "127.0.0.1:8888:8080"
+      - "8888:8080"
     volumes:
       - ./data:/db
     restart: unless-stopped

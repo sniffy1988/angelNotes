@@ -56,9 +56,9 @@ docker compose up -d
 Репозиторій **публічний** — `docker pull` з GHCR зазвичай без логіну (після того, як пакет теж public). Якщо pull просить логін: Package settings → Change visibility → Public.
 ### Веб-морда до БД (Adminer)
 
-Разом із ботом піднімається [Adminer](https://www.adminer.org/) на `http://127.0.0.1:8888` (лише localhost, без пароля).
+Разом із ботом піднімається [Adminer](https://www.adminer.org/) на порт **8888** (без пароля).
 
-1. Відкрий http://127.0.0.1:8888
+1. Відкрий `http://<IP-сервера>:8888` (локально: http://127.0.0.1:8888)
 2. **System:** SQLite 3
 3. **Database:** `/db/bot.db`
 4. **Username / Password:** залиш порожніми
@@ -66,10 +66,10 @@ docker compose up -d
 Якщо бот крутиться без Compose, лише Adminer:
 
 ```bash
-docker run --rm -p 127.0.0.1:8888:8080 -v "$PWD/data:/db" adminer:4
+docker run --rm -p 8888:8080 -v "$PWD/data:/db" adminer:4
 ```
 
-Не публікуй порт на `0.0.0.0` — без пароля це повний доступ до бази.
+Без пароля — доступ має лише довірена мережа (не відкривай порт у інтернет).
 
 ## Змінні середовища
 
