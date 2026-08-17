@@ -32,12 +32,46 @@ python -m bot.main
 
 ## Docker
 
+Образ бота збирається в **GitHub Actions** і публікується в GHCR: `ghcr.io/sniffy1988/angelnotes:latest`.
+
+На Mac-сервері:
+
 ```bash
 cp .env.example .env
-docker compose up -d --build
+# впиши BOT_TOKEN
+
+# логін у GHCR (PAT з правом read:packages, або gh auth)
+echo YOUR_GITHUB_TOKEN | docker login ghcr.io -u sniffy1988 --password-stdin
+
+docker compose pull
+docker compose up -d
 ```
 
 База зберігається в `./data` (том `/app/data`).
+
+Оновлення після нового push у `main` (коли Actions зібрав образ):
+
+```bash
+docker compose pull bot
+docker compose up -d
+```
+
+### Веб-морда до БД (Adminer)
+
+Разом із ботом піднімається [Adminer](https://www.adminer.org/) на `http://127.0.0.1:8888` (лише localhost, без пароля).
+
+1. Відкрий http://127.0.0.1:8888
+2. **System:** SQLite 3
+3. **Database:** `/db/bot.db`
+4. **Username / Password:** залиш порожніми
+
+Якщо бот крутиться без Compose, лише Adminer:
+
+```bash
+docker run --rm -p 127.0.0.1:8888:8080 -v "$PWD/data:/db" adminer:4
+```
+
+Не публікуй порт на `0.0.0.0` — без пароля це повний доступ до бази.
 
 ## Змінні середовища
 
@@ -73,14 +107,13 @@ Telegram ID показується після `/start`.
 ## GitHub Actions
 
 - **CI** (`ci.yml`) — Ruff + `compileall` на PR і `main`
-- **Image** (`image.yml`) — збірка й push образу в GHCR (`ghcr.io/<owner>/<repo>:latest`)
+- **Image** (`image.yml`) — на push у `main` (або вручну Run workflow) збирає Docker-образ і пушить у GHCR:
+  - `ghcr.io/sniffy1988/angelnotes:latest`
+  - `ghcr.io/sniffy1988/angelnotes:sha-<short>`
 
-Підтягнути образ:
+Пакет приватний, як репозиторій. Для `docker pull` потрібен логін у `ghcr.io`.
 
-```bash
-docker pull ghcr.io/<owner>/angelnotes:latest
-```
-
+Локальний білд на сервері не потрібен — тільки `compose pull` + `up`.
 ## Структура
 
 ```

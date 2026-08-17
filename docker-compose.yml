@@ -1,10 +1,19 @@
 services:
   bot:
-    build: .
+    image: ghcr.io/sniffy1988/angelnotes:latest
     container_name: angelnotes-bot
     env_file: .env
     environment:
       DB_PATH: /app/data/bot.db
     volumes:
       - ./data:/app/data
+    restart: unless-stopped
+
+  adminer:
+    image: adminer:4
+    container_name: angelnotes-adminer
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./data:/db
     restart: unless-stopped
