@@ -41,13 +41,15 @@ async def main() -> None:
     dp["stickers"] = stickers
     dp["db"] = db
 
-    dp.update.middleware(DbUserMiddleware(db))
+    user_mw = DbUserMiddleware(db)
+    dp.message.middleware(user_mw)
+    dp.callback_query.middleware(user_mw)
 
-    # Inject settings/stickers into handlers via workflow data
     @dp.update.outer_middleware()
     async def inject_services(handler, event, data):
         data["settings"] = settings
         data["stickers"] = stickers
+        data["db"] = db
         return await handler(event, data)
 
     dp.include_router(start.router)
