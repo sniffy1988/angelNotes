@@ -32,16 +32,13 @@ python -m bot.main
 
 ## Docker
 
-Образ бота збирається в **GitHub Actions** і публікується в GHCR: `ghcr.io/sniffy1988/angelnotes:latest`.
+Образ бота збирається в **GitHub Actions** і публікується в GHCR: `ghcr.io/sniffy1988/angelnotes-bot:latest`.
 
 На Mac-сервері:
 
 ```bash
 cp .env.example .env
 # впиши BOT_TOKEN
-
-# логін у GHCR (PAT з правом read:packages, або gh auth)
-echo YOUR_GITHUB_TOKEN | docker login ghcr.io -u sniffy1988 --password-stdin
 
 docker compose pull
 docker compose up -d
@@ -56,6 +53,7 @@ docker compose pull bot
 docker compose up -d
 ```
 
+Репозиторій **публічний** — `docker pull` з GHCR зазвичай без логіну (після того, як пакет теж public). Якщо pull просить логін: Package settings → Change visibility → Public.
 ### Веб-морда до БД (Adminer)
 
 Разом із ботом піднімається [Adminer](https://www.adminer.org/) на `http://127.0.0.1:8888` (лише localhost, без пароля).
@@ -108,10 +106,8 @@ Telegram ID показується після `/start`.
 
 - **CI** (`ci.yml`) — Ruff + `compileall` на PR і `main`
 - **Image** (`image.yml`) — на push у `main` (або вручну Run workflow) збирає Docker-образ і пушить у GHCR:
-  - `ghcr.io/sniffy1988/angelnotes:latest`
-  - `ghcr.io/sniffy1988/angelnotes:sha-<short>`
-
-Пакет приватний, як репозиторій. Для `docker pull` потрібен логін у `ghcr.io`.
+  - `ghcr.io/sniffy1988/angelnotes-bot:latest`
+  - `ghcr.io/sniffy1988/angelnotes-bot:sha-<short>`
 
 Локальний білд на сервері не потрібен — тільки `compose pull` + `up`.
 ## Структура

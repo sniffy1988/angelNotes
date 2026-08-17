@@ -1,6 +1,6 @@
 services:
   bot:
-    image: ghcr.io/sniffy1988/angelnotes:latest
+    image: ghcr.io/sniffy1988/angelnotes-bot:latest
     container_name: angelnotes-bot
     env_file: .env
     environment:
