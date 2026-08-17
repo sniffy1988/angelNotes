@@ -214,7 +214,7 @@ class Database:
         telegram_id: int,
         username: str | None,
         full_name: str | None,
-    ) -> User:
+    ) -> tuple[User, bool]:
         existing = await self.get_user(telegram_id)
         if existing:
             await self.conn.execute(
@@ -226,7 +226,9 @@ class Database:
                 (username, full_name, telegram_id),
             )
             await self.conn.commit()
-            return await self.get_user(telegram_id)  # type: ignore[return-value]
+            user = await self.get_user(telegram_id)
+            assert user is not None
+            return user, False
 
         admin_count = await self.count_admins()
         is_admin = 1 if admin_count == 0 else 0
@@ -238,7 +240,9 @@ class Database:
             (telegram_id, username, full_name, is_admin, _now_iso()),
         )
         await self.conn.commit()
-        return await self.get_user(telegram_id)  # type: ignore[return-value]
+        user = await self.get_user(telegram_id)
+        assert user is not None
+        return user, True
 
     async def get_user(self, telegram_id: int) -> User | None:
         cur = await self.conn.execute(

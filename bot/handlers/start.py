@@ -19,6 +19,7 @@ async def cmd_start(
     db_user: User,
     stickers: StickerService,
     state: FSMContext,
+    user_just_created: bool = False,
 ) -> None:
     await state.clear()
     await stickers.send_mood(message.bot, message.chat.id, "start")
@@ -26,7 +27,7 @@ async def cmd_start(
         texts.start_message(
             db_user.full_name or "",
             db_user.telegram_id,
-            is_admin=db_user.is_admin,
+            is_admin=bool(user_just_created and db_user.is_admin),
         ),
         reply_markup=main_menu(db_user),
     )

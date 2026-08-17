@@ -27,12 +27,13 @@ class DbUserMiddleware(BaseMiddleware):
             tg_user = event.from_user
 
         if tg_user:
-            user = await self.db.upsert_user(
+            user, created = await self.db.upsert_user(
                 telegram_id=tg_user.id,
                 username=tg_user.username,
                 full_name=tg_user.full_name,
             )
             data["db_user"] = user
+            data["user_just_created"] = created
         return await handler(event, data)
 
 
