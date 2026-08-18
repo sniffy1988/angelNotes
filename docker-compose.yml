@@ -12,8 +12,10 @@ services:
   adminer:
     image: adminer:4
     container_name: angelnotes-adminer
+    user: "0:0"
     ports:
       - "8888:8080"
     volumes:
       - ./data:/db
+      - ./adminer/angelnotes.php:/var/www/html/plugins-enabled/angelnotes.php:ro
     restart: unless-stopped
