@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -11,20 +11,27 @@ from bot import texts
 from bot.config import MAX_REMINDER_OFFSETS, Settings
 from bot.db import Database, ScheduleItem, User
 from bot.keyboards import (
+    calendar_month_kb,
     cancel_kb,
     confirm_delete_kb,
+    date_skip_cancel_kb,
+    due_kb,
     main_menu,
     remind_preset_kb,
     schedule_actions_kb,
     schedule_edit_fields_kb,
     schedule_view_kb,
     skip_cancel_kb,
+    skip_cancel_only_kb,
+    time_preset_kb,
     weekday_kb,
 )
 from bot.stickers import StickerService
 from bot.utils import (
+    compact_time_to_hhmm,
     from_iso,
     is_url,
+    next_weekly_occurrence,
     normalize_offsets,
     parse_due,
     parse_offset_text,
@@ -44,7 +51,9 @@ class ScheduleForm(StatesGroup):
     start_time = State()
     end_time = State()
     starts_at = State()
+    starts_at_time = State()
     ends_at = State()
+    ends_at_time = State()
     offsets = State()
 
 
@@ -59,28 +68,31 @@ async def begin_add_schedule(
 
 def _week_bounds(tz, now: datetime | None = None) -> tuple[datetime, datetime]:
     now = now or datetime.now(tz)
-    start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
-        days=now.weekday()
-    )
-    end = start + timedelta(days=7)
-    return start, end
+    end = now + timedelta(days=7)
+    return now, end
+
+
+def _next_occurrence(item: ScheduleItem, tz, now: datetime) -> datetime | None:
+    if item.kind == "weekly":
+        if item.weekday is None or not item.start_time:
+            return None
+        return next_weekly_occurrence(item.weekday, item.start_time, tz, now)
+    if not item.starts_at:
+        return None
+    starts = from_iso(item.starts_at, tz)
+    if starts < now:
+        return None
+    return starts
 
 
 def _item_on_day(item: ScheduleItem, day: datetime, tz) -> bool:
-    if item.kind == "weekly":
-        return item.weekday == day.weekday()
-    if not item.starts_at:
-        return False
-    return from_iso(item.starts_at, tz).date() == day.date()
+    occurrence = _next_occurrence(item, tz, day)
+    return bool(occurrence and occurrence.date() == day.date())
 
 
 def _item_in_week(item: ScheduleItem, start: datetime, end: datetime, tz) -> bool:
-    if item.kind == "weekly":
-        return True
-    if not item.starts_at:
-        return False
-    starts = from_iso(item.starts_at, tz)
-    return start <= starts < end
+    occurrence = _next_occurrence(item, tz, start)
+    return bool(occurrence and start <= occurrence < end)
 
 
 async def _send_schedule_list(
@@ -117,7 +129,10 @@ async def show_schedule(
         await message.answer(texts.empty_schedule(), reply_markup=main_menu(db_user))
         return
     start, end = _week_bounds(settings.tz)
-    week_items = [i for i in items if _item_in_week(i, start, end, settings.tz)]
+    week_items = sorted(
+        [i for i in items if _item_in_week(i, start, end, settings.tz)],
+        key=lambda item: _next_occurrence(item, settings.tz, start) or end,
+    )
     await _send_schedule_list(
         message, db, settings, week_items, "📅 Розклад на цей тиждень:"
     )
@@ -131,7 +146,10 @@ async def sch_today(
     if not callback.message:
         return
     now = datetime.now(settings.tz)
-    items = [i for i in await db.list_schedule() if _item_on_day(i, now, settings.tz)]
+    items = sorted(
+        [i for i in await db.list_schedule() if _item_on_day(i, now, settings.tz)],
+        key=lambda item: _next_occurrence(item, settings.tz, now) or now,
+    )
     await _send_schedule_list(callback.message, db, settings, items, "📅 На сьогодні:")
 
 
@@ -143,9 +161,10 @@ async def sch_week(
     if not callback.message:
         return
     start, end = _week_bounds(settings.tz)
-    items = [
-        i for i in await db.list_schedule() if _item_in_week(i, start, end, settings.tz)
-    ]
+    items = sorted(
+        [i for i in await db.list_schedule() if _item_in_week(i, start, end, settings.tz)],
+        key=lambda item: _next_occurrence(item, settings.tz, start) or end,
+    )
     await _send_schedule_list(
         callback.message, db, settings, items, "📅 Розклад на цей тиждень:"
     )
@@ -230,7 +249,7 @@ async def sch_link(
         await message.answer(texts.ask_weekday(), reply_markup=weekday_kb())
     else:
         await state.set_state(ScheduleForm.starts_at)
-        await message.answer(texts.ask_due_required(), reply_markup=cancel_kb())
+        await message.answer(texts.ask_due_required(), reply_markup=due_kb(required=True))
 
 
 @router.callback_query(F.data.startswith("wd:"))
@@ -269,7 +288,10 @@ async def sch_weekday(
         return
     await state.update_data(weekday=weekday)
     await state.set_state(ScheduleForm.start_time)
-    await callback.message.answer(texts.ask_start_time(), reply_markup=cancel_kb())
+    await callback.message.answer(
+        texts.ask_start_time(),
+        reply_markup=time_preset_kb("wtime"),
+    )
 
 
 @router.message(ScheduleForm.start_time, F.text)
@@ -297,7 +319,11 @@ async def sch_start_time(
         return
     await state.update_data(start_time=parsed)
     await state.set_state(ScheduleForm.end_time)
-    await message.answer(texts.ask_end_optional(), reply_markup=skip_cancel_kb())
+    await message.answer(
+        texts.ask_end_optional(),
+        reply_markup=time_preset_kb("wend"),
+    )
+    await message.answer("Або пропусти ↓", reply_markup=skip_cancel_only_kb())
 
 
 @router.message(ScheduleForm.end_time, F.text)
@@ -334,7 +360,37 @@ async def sch_end_time(
     )
 
 
-@router.message(ScheduleForm.starts_at, F.text)
+@router.callback_query(ScheduleForm.start_time, F.data.regexp(r"^wtime:\d{4}$"))
+async def sch_start_time_cb(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+    db_user: User,
+    settings: Settings,
+    stickers: StickerService,
+) -> None:
+    await callback.answer()
+    if not callback.message:
+        return
+    hhmm = compact_time_to_hhmm(callback.data.split(":")[1])
+    if not hhmm:
+        return
+    data = await state.get_data()
+    if data.get("flow") == "edit":
+        await _save_edit(
+            callback.message, state, db, db_user, settings, stickers, start_time=hhmm
+        )
+        return
+    await state.update_data(start_time=hhmm)
+    await state.set_state(ScheduleForm.end_time)
+    await callback.message.answer(
+        texts.ask_end_optional(),
+        reply_markup=time_preset_kb("wend"),
+    )
+    await callback.message.answer("Або пропусти ↓", reply_markup=skip_cancel_only_kb())
+
+
+@router.message(ScheduleForm.starts_at, F.text != texts.BTN_PICK_DATE)
 async def sch_starts_at(
     message: Message,
     state: FSMContext,
@@ -360,10 +416,131 @@ async def sch_starts_at(
         return
     await state.update_data(starts_at=iso)
     await state.set_state(ScheduleForm.ends_at)
-    await message.answer(texts.ask_end_optional(), reply_markup=skip_cancel_kb())
+    await message.answer(texts.ask_end_optional(), reply_markup=date_skip_cancel_kb())
 
 
-@router.message(ScheduleForm.ends_at, F.text)
+@router.message(ScheduleForm.starts_at, F.text == texts.BTN_PICK_DATE)
+async def sch_starts_pick_date(message: Message) -> None:
+    now = datetime.now()
+    await message.answer(
+        "Обери день початку ✨",
+        reply_markup=calendar_month_kb(now.year, now.month, "scal:start"),
+    )
+
+
+@router.message(ScheduleForm.ends_at, F.text == texts.BTN_PICK_DATE)
+async def sch_ends_pick_date(message: Message) -> None:
+    now = datetime.now()
+    await message.answer(
+        "Обери день завершення ✨",
+        reply_markup=calendar_month_kb(now.year, now.month, "scal:end"),
+    )
+
+
+@router.callback_query(
+    F.data.in_({"scal:start:noop", "scal:end:noop"})
+)
+async def sch_calendar_noop(callback: CallbackQuery) -> None:
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^scal:(start|end):nav:\d{4}:\d{1,2}$"))
+async def sch_calendar_nav(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if not callback.message:
+        return
+    _, field, _, year_s, month_s = callback.data.split(":")
+    await callback.message.edit_reply_markup(
+        reply_markup=calendar_month_kb(int(year_s), int(month_s), f"scal:{field}")
+    )
+
+
+@router.callback_query(F.data.regexp(r"^scal:(start|end):day:\d{4}-\d{2}-\d{2}$"))
+async def sch_calendar_day(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    if not callback.message:
+        return
+    _, field, _, selected = callback.data.split(":", 3)
+    chosen_day = date.fromisoformat(selected)
+    if field == "start":
+        await state.update_data(pending_starts_at_date=selected)
+        await state.set_state(ScheduleForm.starts_at_time)
+    else:
+        await state.update_data(pending_ends_at_date=selected)
+        await state.set_state(ScheduleForm.ends_at_time)
+    await callback.message.answer(
+        texts.ask_time_for_date(chosen_day.strftime("%d.%m.%Y")),
+        reply_markup=time_preset_kb(
+            "sctime:start" if field == "start" else "sctime:end"
+        ),
+    )
+    await callback.message.answer("Або напиши час ↓", reply_markup=cancel_kb())
+
+
+@router.callback_query(
+    ScheduleForm.starts_at_time, F.data.regexp(r"^sctime:start:\d{4}$")
+)
+async def sch_starts_at_time_cb(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+    db_user: User,
+    settings: Settings,
+    stickers: StickerService,
+) -> None:
+    await callback.answer()
+    if not callback.message:
+        return
+    hhmm = compact_time_to_hhmm(callback.data.rsplit(":", 1)[1])
+    if not hhmm:
+        return
+    data = await state.get_data()
+    dt = parse_due(f"{data['pending_starts_at_date']} {hhmm}", settings.tz)
+    if not dt:
+        await stickers.send_mood(callback.bot, callback.message.chat.id, "error")
+        await callback.message.answer(texts.bad_input())
+        return
+    iso = to_iso(dt)
+    if data.get("flow") == "edit":
+        await _save_edit(
+            callback.message, state, db, db_user, settings, stickers, starts_at=iso
+        )
+        return
+    await state.update_data(starts_at=iso)
+    await state.set_state(ScheduleForm.ends_at)
+    await callback.message.answer(
+        texts.ask_end_optional(), reply_markup=date_skip_cancel_kb()
+    )
+
+
+@router.message(ScheduleForm.starts_at_time, F.text)
+async def sch_starts_at_time(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+    db_user: User,
+    settings: Settings,
+    stickers: StickerService,
+) -> None:
+    text = (message.text or "").strip()
+    if text == texts.BTN_CANCEL:
+        return
+    data = await state.get_data()
+    dt = parse_due(f"{data['pending_starts_at_date']} {text}", settings.tz)
+    if not dt:
+        await stickers.send_mood(message.bot, message.chat.id, "error")
+        await message.answer(texts.bad_input())
+        return
+    iso = to_iso(dt)
+    if data.get("flow") == "edit":
+        await _save_edit(message, state, db, db_user, settings, stickers, starts_at=iso)
+        return
+    await state.update_data(starts_at=iso)
+    await state.set_state(ScheduleForm.ends_at)
+    await message.answer(texts.ask_end_optional(), reply_markup=date_skip_cancel_kb())
+
+
+@router.message(ScheduleForm.ends_at, F.text != texts.BTN_PICK_DATE)
 async def sch_ends_at(
     message: Message,
     state: FSMContext,
@@ -401,6 +578,102 @@ async def sch_ends_at(
     await state.update_data(ends_at=ends, offsets=[])
     await state.set_state(ScheduleForm.offsets)
     await message.answer(
+        texts.ask_remind_offsets([]),
+        reply_markup=remind_preset_kb([]),
+    )
+
+
+@router.message(ScheduleForm.ends_at_time, F.text)
+async def sch_ends_at_time(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+    db_user: User,
+    settings: Settings,
+    stickers: StickerService,
+) -> None:
+    text = (message.text or "").strip()
+    if text == texts.BTN_CANCEL:
+        return
+    data = await state.get_data()
+    dt = parse_due(f"{data['pending_ends_at_date']} {text}", settings.tz)
+    if not dt:
+        await stickers.send_mood(message.bot, message.chat.id, "error")
+        await message.answer(texts.bad_input())
+        return
+    ends = to_iso(dt)
+    if data.get("flow") == "edit":
+        await _save_edit(message, state, db, db_user, settings, stickers, ends_at=ends)
+        return
+    await state.update_data(ends_at=ends, offsets=[])
+    await state.set_state(ScheduleForm.offsets)
+    await message.answer(
+        texts.ask_remind_offsets([]),
+        reply_markup=remind_preset_kb([]),
+    )
+
+
+@router.callback_query(ScheduleForm.end_time, F.data.regexp(r"^wend:\d{4}$"))
+async def sch_end_time_cb(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+    db_user: User,
+    settings: Settings,
+    stickers: StickerService,
+) -> None:
+    await callback.answer()
+    if not callback.message:
+        return
+    hhmm = compact_time_to_hhmm(callback.data.split(":")[1])
+    if not hhmm:
+        return
+    data = await state.get_data()
+    if data.get("flow") == "edit":
+        await _save_edit(
+            callback.message, state, db, db_user, settings, stickers, end_time=hhmm
+        )
+        return
+    await state.update_data(end_time=hhmm, offsets=[])
+    await state.set_state(ScheduleForm.offsets)
+    await callback.message.answer(
+        texts.ask_remind_offsets([]),
+        reply_markup=remind_preset_kb([]),
+    )
+
+
+@router.callback_query(
+    ScheduleForm.ends_at_time, F.data.regexp(r"^sctime:end:\d{4}$")
+)
+async def sch_ends_at_time_cb(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+    db_user: User,
+    settings: Settings,
+    stickers: StickerService,
+) -> None:
+    await callback.answer()
+    if not callback.message:
+        return
+    hhmm = compact_time_to_hhmm(callback.data.rsplit(":", 1)[1])
+    if not hhmm:
+        return
+    data = await state.get_data()
+    dt = parse_due(f"{data['pending_ends_at_date']} {hhmm}", settings.tz)
+    if not dt:
+        await stickers.send_mood(callback.bot, callback.message.chat.id, "error")
+        await callback.message.answer(texts.bad_input())
+        return
+    ends = to_iso(dt)
+    if data.get("flow") == "edit":
+        await _save_edit(
+            callback.message, state, db, db_user, settings, stickers, ends_at=ends
+        )
+        return
+    await state.update_data(ends_at=ends, offsets=[])
+    await state.set_state(ScheduleForm.offsets)
+    await callback.message.answer(
         texts.ask_remind_offsets([]),
         reply_markup=remind_preset_kb([]),
     )
@@ -635,25 +908,15 @@ async def sch_edit_field(
             skip_cancel_kb(),
         ),
         "link": (ScheduleForm.link, texts.ask_link(), skip_cancel_kb()),
-        "start_time": (
-            ScheduleForm.start_time,
-            texts.ask_start_time(),
-            cancel_kb(),
-        ),
-        "end_time": (
-            ScheduleForm.end_time,
-            texts.ask_end_optional(),
-            skip_cancel_kb(),
-        ),
         "starts_at": (
             ScheduleForm.starts_at,
             texts.ask_due_required(),
-            cancel_kb(),
+            due_kb(required=True),
         ),
         "ends_at": (
             ScheduleForm.ends_at,
             texts.ask_end_optional(),
-            skip_cancel_kb(),
+            date_skip_cancel_kb(),
         ),
     }
 
@@ -670,6 +933,21 @@ async def sch_edit_field(
             texts.ask_remind_offsets(offsets),
             reply_markup=remind_preset_kb(offsets),
         )
+        return
+
+    if field == "start_time":
+        await state.set_state(ScheduleForm.start_time)
+        await callback.message.answer(
+            texts.ask_start_time(), reply_markup=time_preset_kb("wtime")
+        )
+        return
+
+    if field == "end_time":
+        await state.set_state(ScheduleForm.end_time)
+        await callback.message.answer(
+            texts.ask_end_optional(), reply_markup=time_preset_kb("wend")
+        )
+        await callback.message.answer("Або пропусти ↓", reply_markup=skip_cancel_only_kb())
         return
 
     if field in prompts:

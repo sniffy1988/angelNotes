@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date, datetime
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -10,6 +12,7 @@ from bot.config import MAX_REMINDER_OFFSETS, Settings
 from bot.db import Database, User
 from bot.keyboards import (
     assign_child_kb,
+    calendar_month_kb,
     cancel_kb,
     confirm_delete_kb,
     due_kb,
@@ -18,10 +21,12 @@ from bot.keyboards import (
     skip_cancel_kb,
     task_actions_kb,
     task_edit_fields_kb,
+    time_preset_kb,
 )
 from bot.middlewares import can_edit_task
 from bot.stickers import StickerService
 from bot.utils import (
+    compact_time_to_hhmm,
     is_url,
     normalize_offsets,
     parse_due,
@@ -38,6 +43,7 @@ class TaskForm(StatesGroup):
     description = State()
     link = State()
     due = State()
+    due_time = State()
     assignee = State()
     offsets = State()
 
@@ -161,7 +167,7 @@ async def task_link(
     await message.answer(texts.ask_due(), reply_markup=due_kb(required=False))
 
 
-@router.message(TaskForm.due, F.text)
+@router.message(TaskForm.due, F.text != texts.BTN_PICK_DATE)
 async def task_due(
     message: Message,
     state: FSMContext,
@@ -184,47 +190,100 @@ async def task_due(
             return
         due_iso = to_iso(dt)
 
-    data = await state.get_data()
-    if data.get("flow") == "edit":
-        fields: dict = {"due_at": due_iso}
-        task_id = data["edit_task_id"]
-        await db.update_task_fields(task_id, **fields)
-        if due_iso is None:
-            await db.set_offsets("task", task_id, [])
-        task = await db.get_task(task_id)
-        offsets = [o.before_minutes for o in await db.get_offsets("task", task_id)]
-        await state.clear()
-        await stickers.send_mood(message.bot, message.chat.id, "saved")
-        await message.answer(
-            texts.saved_ok() + "\n\n" + task_card_html(task, offsets, settings.tz),
-            reply_markup=main_menu(db_user),
-            disable_web_page_preview=True,
-        )
-        return
+    await _handle_due_value(message, state, db, db_user, settings, stickers, due_iso)
 
-    await state.update_data(due_at=due_iso, offsets=[])
-    if db_user.is_parent:
-        children = [u for u in await db.list_children() if u.telegram_id != db_user.telegram_id]
-        if not children:
-            await state.update_data(assigned_to=db_user.telegram_id)
-            await message.answer(texts.child_not_registered())
-        elif len(children) == 1:
-            await state.update_data(assigned_to=children[0].telegram_id)
-        else:
-            await state.set_state(TaskForm.assignee)
-            await message.answer(texts.ask_assignee(), reply_markup=assign_child_kb(children))
-            return
-    else:
-        await state.update_data(assigned_to=db_user.telegram_id)
 
-    if due_iso is None:
-        await _finish_create(message, state, db, db_user, settings, stickers)
-        return
-
-    await state.set_state(TaskForm.offsets)
+@router.message(TaskForm.due, F.text == texts.BTN_PICK_DATE)
+async def task_due_pick_date(message: Message) -> None:
+    now = datetime.now()
     await message.answer(
-        texts.ask_remind_offsets([]),
-        reply_markup=remind_preset_kb([]),
+        "Обери день ✨",
+        reply_markup=calendar_month_kb(now.year, now.month, "tcal"),
+    )
+
+
+@router.callback_query(TaskForm.due, F.data == "tcal:noop")
+async def task_due_calendar_noop(callback: CallbackQuery) -> None:
+    await callback.answer()
+
+
+@router.callback_query(TaskForm.due, F.data.startswith("tcal:nav:"))
+async def task_due_calendar_nav(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if not callback.message:
+        return
+    _, _, year_s, month_s = callback.data.split(":")
+    await callback.message.edit_reply_markup(
+        reply_markup=calendar_month_kb(int(year_s), int(month_s), "tcal")
+    )
+
+
+@router.callback_query(TaskForm.due, F.data.startswith("tcal:day:"))
+async def task_due_calendar_day(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    await callback.answer()
+    if not callback.message:
+        return
+    selected = callback.data.split(":", 2)[2]
+    chosen_day = date.fromisoformat(selected)
+    await state.update_data(pending_due_date=selected)
+    await state.set_state(TaskForm.due_time)
+    await callback.message.answer(
+        texts.ask_time_for_date(chosen_day.strftime("%d.%m.%Y")),
+        reply_markup=time_preset_kb("tctime"),
+    )
+    await callback.message.answer("Або напиши час ↓", reply_markup=cancel_kb())
+
+
+@router.callback_query(TaskForm.due_time, F.data.regexp(r"^tctime:\d{4}$"))
+async def task_due_time_cb(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+    db_user: User,
+    settings: Settings,
+    stickers: StickerService,
+) -> None:
+    await callback.answer()
+    if not callback.message:
+        return
+    compact = callback.data.split(":")[1]
+    hhmm = compact_time_to_hhmm(compact)
+    if not hhmm:
+        return
+    data = await state.get_data()
+    dt = parse_due(f"{data['pending_due_date']} {hhmm}", settings.tz)
+    if not dt:
+        await stickers.send_mood(callback.bot, callback.message.chat.id, "error")
+        await callback.message.answer(texts.bad_input())
+        return
+    await _handle_due_value(
+        callback.message, state, db, db_user, settings, stickers, to_iso(dt)
+    )
+
+
+@router.message(TaskForm.due_time, F.text)
+async def task_due_time(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+    db_user: User,
+    settings: Settings,
+    stickers: StickerService,
+) -> None:
+    text = (message.text or "").strip()
+    if text == texts.BTN_CANCEL:
+        return
+    data = await state.get_data()
+    dt = parse_due(f"{data['pending_due_date']} {text}", settings.tz)
+    if not dt:
+        await stickers.send_mood(message.bot, message.chat.id, "error")
+        await message.answer(texts.bad_input())
+        return
+    await _handle_due_value(
+        message, state, db, db_user, settings, stickers, to_iso(dt)
     )
 
 
@@ -344,6 +403,62 @@ async def _finish_create_or_edit_offsets(
         )
         return
     await _finish_create(message, state, db, db_user, settings, stickers)
+
+
+async def _handle_due_value(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+    db_user: User,
+    settings: Settings,
+    stickers: StickerService,
+    due_iso: str | None,
+) -> None:
+    data = await state.get_data()
+    if data.get("flow") == "edit":
+        task_id = data["edit_task_id"]
+        await db.update_task_fields(task_id, due_at=due_iso)
+        if due_iso is None:
+            await db.set_offsets("task", task_id, [])
+        task = await db.get_task(task_id)
+        offsets = [o.before_minutes for o in await db.get_offsets("task", task_id)]
+        await state.clear()
+        await stickers.send_mood(message.bot, message.chat.id, "saved")
+        await message.answer(
+            texts.saved_ok() + "\n\n" + task_card_html(task, offsets, settings.tz),
+            reply_markup=main_menu(db_user),
+            disable_web_page_preview=True,
+        )
+        return
+
+    await state.update_data(due_at=due_iso, offsets=[])
+    if db_user.is_parent:
+        children = [
+            u for u in await db.list_children() if u.telegram_id != db_user.telegram_id
+        ]
+        if not children:
+            await state.update_data(assigned_to=db_user.telegram_id)
+            await message.answer(texts.child_not_registered())
+        elif len(children) == 1:
+            await state.update_data(assigned_to=children[0].telegram_id)
+        else:
+            await state.set_state(TaskForm.assignee)
+            await message.answer(
+                texts.ask_assignee(), reply_markup=assign_child_kb(children)
+            )
+            return
+    else:
+        await state.update_data(assigned_to=db_user.telegram_id)
+
+    if due_iso is None:
+        await _finish_create(message, state, db, db_user, settings, stickers)
+        return
+
+    await state.set_state(TaskForm.offsets)
+    await message.answer(
+        texts.ask_remind_offsets([]),
+        reply_markup=remind_preset_kb([]),
+    )
 
 
 async def _finish_create(

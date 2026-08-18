@@ -25,6 +25,12 @@ def is_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
+def compact_time_to_hhmm(compact: str) -> str | None:
+    if not re.fullmatch(r"\d{4}", compact):
+        return None
+    return f"{compact[:2]}:{compact[2:]}"
+
+
 def parse_time_hhmm(value: str) -> str | None:
     value = value.strip().lower().replace(".", ":")
     m = re.fullmatch(r"(\d{1,2}):(\d{2})", value)
@@ -65,9 +71,9 @@ def parse_due(value: str, tz: ZoneInfo, now: datetime | None = None) -> datetime
             return now.replace(hour=h, minute=m, second=0, microsecond=0)
         return None
 
-    # dd.mm[.[yyyy]] [HH:MM]
+    # dd.mm[.[yyyy]] [HH:MM], also supports / and -
     m = re.fullmatch(
-        r"(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?(?:\s+(\d{1,2})[:.](\d{2}))?",
+        r"(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?(?:\s+(\d{1,2})[:.](\d{2}))?",
         text,
     )
     if m:
@@ -88,6 +94,20 @@ def parse_due(value: str, tz: ZoneInfo, now: datetime | None = None) -> datetime
                 pass
         return dt
 
+    # yyyy-mm-dd [HH:MM]
+    m = re.fullmatch(
+        r"(\d{4})-(\d{1,2})-(\d{1,2})(?:[ t](\d{1,2})[:.](\d{2}))?",
+        text,
+    )
+    if m:
+        year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        hour = int(m.group(4)) if m.group(4) else 9
+        minute = int(m.group(5)) if m.group(5) else 0
+        try:
+            return datetime(year, month, day, hour, minute, tzinfo=tz)
+        except ValueError:
+            return None
+
     try:
         dt = date_parser.parse(text, dayfirst=True, fuzzy=True)
     except (ValueError, OverflowError):
@@ -96,6 +116,8 @@ def parse_due(value: str, tz: ZoneInfo, now: datetime | None = None) -> datetime
         dt = dt.replace(tzinfo=tz)
     else:
         dt = dt.astimezone(tz)
+    if dt.hour == 0 and dt.minute == 0 and not re.search(r"\d{1,2}[:.]\d{2}", text):
+        dt = dt.replace(hour=9, minute=0, second=0, microsecond=0)
     return dt
 
 

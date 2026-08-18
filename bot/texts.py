@@ -13,6 +13,7 @@ BTN_DONE_OFFSETS = "Готово"
 BTN_MORE_OFFSET = "Ще одне"
 BTN_TODAY = "Сьогодні"
 BTN_WEEK = "Тиждень"
+BTN_PICK_DATE = "🗓 Обрати дату"
 
 ROLE_PARENT = "батьки"
 ROLE_CHILD = "дитина"
@@ -36,6 +37,8 @@ REMIND_PRESETS = [
     ("За 1 день", 1440),
     ("За 1 тиждень", 10080),
 ]
+
+TIME_PRESETS = ["08:00", "09:00", "12:00", "15:00", "18:00", "20:00"]
 
 
 def start_message(full_name: str, telegram_id: int, is_admin: bool) -> str:
@@ -104,8 +107,10 @@ def ask_link() -> str:
 
 def ask_due() -> str:
     return (
-        "Строк? Наприклад: <code>17.08 18:00</code> або <code>завтра 9:00</code>.\n"
-        "Або «Без строку»."
+        "Строк?\n"
+        "• напиши дату й час: <code>17.08 18:00</code> або <code>завтра 9:00</code>\n"
+        "• або натисни «🗓 Обрати дату», потім обери час кнопками\n"
+        "• або «Без строку»"
     )
 
 
@@ -115,12 +120,19 @@ def ask_assignee() -> str:
 
 def ask_due_required() -> str:
     return (
-        "Коли починається? Наприклад: <code>20.08 18:00</code> або <code>завтра 9:00</code>."
+        "Коли починається?\n"
+        "• напиши дату й час: <code>20.08 18:00</code> або <code>завтра 9:00</code>\n"
+        "• або натисни «🗓 Обрати дату», потім обери час кнопками"
     )
 
 
 def ask_end_optional() -> str:
-    return "Час кінця (HH:MM або дата+час)? Можна пропустити."
+    return (
+        "Час кінця?\n"
+        "• напиши <code>HH:MM</code> або дату+час\n"
+        "• або «🗓 Обрати дату» і час кнопками\n"
+        "• або «Пропустити»"
+    )
 
 
 def ask_weekday() -> str:
@@ -128,7 +140,18 @@ def ask_weekday() -> str:
 
 
 def ask_start_time() -> str:
-    return "Час початку? Наприклад: <code>9:00</code>"
+    return (
+        "Час початку?\n"
+        "• обери кнопку нижче\n"
+        "• або напиши <code>9:00</code>"
+    )
+
+
+def ask_time_for_date(date_label: str) -> str:
+    return (
+        f"Дата: <b>{date_label}</b>\n"
+        "Обери час кнопками або напиши <code>HH:MM</code>."
+    )
 
 
 def ask_remind_offsets(current: list[int] | None = None) -> str:

@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from bot.db import Database
+from bot.db import Database, ScheduleItem
+from bot.handlers import schedule as schedule_handlers
 from bot.middlewares import can_edit_task
 from bot.utils import (
     from_iso,
@@ -48,6 +49,14 @@ class UtilsTests(unittest.TestCase):
         assert d2 is not None
         self.assertEqual(d2.date(), (now + timedelta(days=1)).date())
         self.assertEqual(d2.hour, 9)
+
+        d3 = parse_due("2026-08-19 18:30", TZ, now=now)
+        assert d3 is not None
+        self.assertEqual((d3.year, d3.month, d3.day, d3.hour, d3.minute), (2026, 8, 19, 18, 30))
+
+        d4 = parse_due("19-08", TZ, now=now)
+        assert d4 is not None
+        self.assertEqual((d4.day, d4.month, d4.hour, d4.minute), (19, 8, 9, 0))
 
     def test_parse_offsets(self) -> None:
         self.assertEqual(parse_offset_text("у строк"), 0)
@@ -222,6 +231,57 @@ class ReminderLogicTests(unittest.TestCase):
         remind = due - timedelta(minutes=10)
         self.assertEqual(remind.hour, 14)
         self.assertEqual(remind.minute, 50)
+
+    def test_schedule_week_filters_past_items(self) -> None:
+        now = datetime(2026, 8, 18, 10, 0, tzinfo=TZ)
+        start, end = schedule_handlers._week_bounds(TZ, now)
+
+        past_once = ScheduleItem(
+            id=1,
+            kind="once",
+            title="Past",
+            description=None,
+            link=None,
+            weekday=None,
+            start_time=None,
+            end_time=None,
+            starts_at="2026-08-17T07:00:00Z",
+            ends_at=None,
+            created_by=1,
+            created_at="2026-08-17T06:00:00Z",
+        )
+        future_once = ScheduleItem(
+            id=2,
+            kind="once",
+            title="Future",
+            description=None,
+            link=None,
+            weekday=None,
+            start_time=None,
+            end_time=None,
+            starts_at="2026-08-19T07:00:00Z",
+            ends_at=None,
+            created_by=1,
+            created_at="2026-08-17T06:00:00Z",
+        )
+        past_weekly = ScheduleItem(
+            id=3,
+            kind="weekly",
+            title="Morning",
+            description=None,
+            link=None,
+            weekday=1,
+            start_time="09:00",
+            end_time=None,
+            starts_at=None,
+            ends_at=None,
+            created_by=1,
+            created_at="2026-08-17T06:00:00Z",
+        )
+
+        self.assertFalse(schedule_handlers._item_in_week(past_once, start, end, TZ))
+        self.assertTrue(schedule_handlers._item_in_week(future_once, start, end, TZ))
+        self.assertFalse(schedule_handlers._item_on_day(past_weekly, now, TZ))
 
 
 class ImportSmokeTests(unittest.TestCase):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import calendar
+
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -48,11 +50,34 @@ def skip_cancel_kb() -> ReplyKeyboardMarkup:
 
 
 def due_kb(*, required: bool = False) -> ReplyKeyboardMarkup:
-    rows: list[list[KeyboardButton]] = []
+    rows: list[list[KeyboardButton]] = [
+        [KeyboardButton(text=texts.BTN_PICK_DATE)]
+    ]
     if not required:
         rows.append([KeyboardButton(text=texts.BTN_NO_DUE)])
     rows.append([KeyboardButton(text=texts.BTN_CANCEL)])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def date_skip_cancel_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=texts.BTN_PICK_DATE)],
+            [KeyboardButton(text=texts.BTN_SKIP)],
+            [KeyboardButton(text=texts.BTN_CANCEL)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def skip_cancel_only_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=texts.BTN_SKIP)],
+            [KeyboardButton(text=texts.BTN_CANCEL)],
+        ],
+        resize_keyboard=True,
+    )
 
 
 def weekday_kb() -> InlineKeyboardMarkup:
@@ -214,3 +239,58 @@ def assign_child_kb(children: list[User], *, task_id: int | None = None) -> Inli
         builder.button(text=label, callback_data=f"{prefix}:{child.telegram_id}{suffix}")
     builder.adjust(1)
     return builder.as_markup()
+
+
+def time_preset_kb(prefix: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for label in texts.TIME_PRESETS:
+        compact = label.replace(":", "")
+        builder.button(text=label, callback_data=f"{prefix}:{compact}")
+    builder.adjust(3)
+    return builder.as_markup()
+
+
+def calendar_month_kb(year: int, month: int, prefix: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="←",
+            callback_data=f"{prefix}:nav:{_shift_month(year, month, -1)[0]}:{_shift_month(year, month, -1)[1]}",
+        ),
+        InlineKeyboardButton(text=f"{month:02d}.{year}", callback_data=f"{prefix}:noop"),
+        InlineKeyboardButton(
+            text="→",
+            callback_data=f"{prefix}:nav:{_shift_month(year, month, 1)[0]}:{_shift_month(year, month, 1)[1]}",
+        ),
+    )
+    builder.row(
+        *[
+            InlineKeyboardButton(text=label, callback_data=f"{prefix}:noop")
+            for label in texts.WEEKDAYS_SHORT
+        ]
+    )
+    for week in calendar.monthcalendar(year, month):
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(
+                    InlineKeyboardButton(text=" ", callback_data=f"{prefix}:noop")
+                )
+            else:
+                row.append(
+                    InlineKeyboardButton(
+                        text=str(day),
+                        callback_data=f"{prefix}:day:{year:04d}-{month:02d}-{day:02d}",
+                    )
+                )
+        builder.row(*row)
+    return builder.as_markup()
+
+
+def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
+    month += delta
+    if month < 1:
+        return year - 1, 12
+    if month > 12:
+        return year + 1, 1
+    return year, month
