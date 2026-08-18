@@ -63,17 +63,27 @@ docker compose up -d
 3. **Database:** `/db/bot.db`
 4. **Username / Password:** залиш порожніми → Login
 
-Якщо сторінка не відкривається:
+Adminer збирається в GHCR як `ghcr.io/sniffy1988/angelnotes-adminer:latest` (разом із ботом у `image.yml`).
+
+Якщо сторінка не відкривається або помилка `plugins-enabled/angelnotes.php`:
 
 ```bash
-docker compose ps
-docker compose logs adminer --tail 50
-docker compose up -d --build adminer
+git pull
+# якщо раніше був битий mount — angelnotes.php міг стати папкою:
+rm -rf adminer/angelnotes.php && git checkout -- adminer/angelnotes.php
+
+docker compose stop adminer
+docker compose rm -f adminer
+docker compose pull adminer
+docker compose up -d adminer
+docker compose exec adminer ls -la /var/www/html/plugins-enabled/
 ```
+
+Остання команда має показати файл `001-angelnotes.php`, не папку.
 
 Якщо база не відкривається (permission denied) — перезапусти adminer після оновлення compose (контейнер має читати `./data/bot.db`).
 
-Якщо бот крутиться без Compose, лише Adminer:
+Локально без GHCR:
 
 ```bash
 docker build -t angelnotes-adminer:local ./adminer

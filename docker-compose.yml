@@ -10,8 +10,7 @@ services:
     restart: unless-stopped
 
   adminer:
-    build: ./adminer
-    image: angelnotes-adminer:local
+    image: ghcr.io/sniffy1988/angelnotes-adminer:latest
     container_name: angelnotes-adminer
     user: "0:0"
     ports:
