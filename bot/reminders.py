@@ -62,18 +62,21 @@ class ReminderService:
         if self.scheduler.running:
             self.scheduler.shutdown(wait=False)
 
+    async def _send_to_user(self, user_id: int, text: str, mood: str = "remind") -> None:
+        try:
+            await self.stickers.send_mood(self.bot, user_id, mood)
+            await self.bot.send_message(
+                user_id,
+                text,
+                disable_web_page_preview=True,
+            )
+        except TelegramAPIError as exc:
+            logger.warning("Send to %s failed: %s", user_id, exc)
+
     async def _broadcast(self, text: str, mood: str = "remind") -> None:
         users = await self.db.list_users()
         for user in users:
-            try:
-                await self.stickers.send_mood(self.bot, user.telegram_id, mood)  # type: ignore[arg-type]
-                await self.bot.send_message(
-                    user.telegram_id,
-                    text,
-                    disable_web_page_preview=True,
-                )
-            except TelegramAPIError as exc:
-                logger.warning("Broadcast to %s failed: %s", user.telegram_id, exc)
+            await self._send_to_user(user.telegram_id, text, mood)
 
     def _occurrence_for_task(self, task: Task) -> datetime | None:
         if not task.due_at or task.status != "open":
@@ -118,6 +121,7 @@ class ReminderService:
                 return
             occurrence = self._occurrence_for_task(task)
             title = task.title
+            target_user_id = task.assigned_to or task.created_by
             extra_parts: list[str] = []
             if task.description:
                 extra_parts.append(escape_html(task.description))
@@ -128,6 +132,7 @@ class ReminderService:
             extra = "\n".join(extra_parts)
             once = True
         else:
+            target_user_id = None
             item = await self.db.get_schedule(offset.target_id)
             if not item:
                 return
@@ -169,7 +174,10 @@ class ReminderService:
             when_label = texts.format_offset(offset.before_minutes)
 
         text = texts.remind_message(escape_html(title), when_label, extra)
-        await self._broadcast(text, mood="remind")
+        if target_user_id:
+            await self._send_to_user(target_user_id, text, mood="remind")
+        else:
+            await self._broadcast(text, mood="remind")
         await self.db.mark_offset_sent(offset.id, occ_iso)
 
     async def send_digest(self) -> None:

@@ -161,7 +161,13 @@ def escape_html(text: str) -> str:
     )
 
 
-def task_card_html(task, offsets: list[int], tz: ZoneInfo, author: str | None = None) -> str:
+def task_card_html(
+    task,
+    offsets: list[int],
+    tz: ZoneInfo,
+    author: str | None = None,
+    assignee: str | None = None,
+) -> str:
     status = "✔ зроблено" if task.status == "done" else "⏳ відкрито"
     lines = [
         f"<b>{escape_html(task.title)}</b>",
@@ -176,6 +182,8 @@ def task_card_html(task, offsets: list[int], tz: ZoneInfo, author: str | None = 
         lines.append(f"Нагадати: {texts.format_offsets(offsets)}")
     if author:
         lines.append(f"Автор: {escape_html(author)}")
+    if assignee:
+        lines.append(f"Для: {escape_html(assignee)}")
     lines.append(f"#{task.id}")
     return "\n".join(lines)
 

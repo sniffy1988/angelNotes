@@ -118,6 +118,7 @@ def task_edit_fields_kb(task_id: int) -> InlineKeyboardMarkup:
         ("description", "Опис"),
         ("link", "Посилання"),
         ("due", "Строк"),
+        ("assignee", "Дитина"),
         ("remind", "Нагадування"),
     ]:
         builder.button(text=label, callback_data=f"tedit:{key}:{task_id}")
@@ -200,5 +201,16 @@ def admin_user_kb(telegram_id: int, role: str, is_admin: bool) -> InlineKeyboard
             text="Зробити адміном",
             callback_data=f"adm:admin:1:{telegram_id}",
         )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def assign_child_kb(children: list[User], *, task_id: int | None = None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    prefix = "tassignedit" if task_id is not None else "tassign"
+    for child in children:
+        label = child.full_name or child.username or str(child.telegram_id)
+        suffix = f":{task_id}" if task_id is not None else ""
+        builder.button(text=label, callback_data=f"{prefix}:{child.telegram_id}{suffix}")
     builder.adjust(1)
     return builder.as_markup()

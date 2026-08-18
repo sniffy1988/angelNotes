@@ -39,6 +39,7 @@ class Task:
     status: TaskStatus
     due_at: str | None
     created_by: int | None
+    assigned_to: int | None
     completed_by: int | None
     created_at: str
     completed_at: str | None
@@ -95,6 +96,7 @@ def _row_task(row: aiosqlite.Row) -> Task:
         status=row["status"],
         due_at=row["due_at"],
         created_by=row["created_by"],
+        assigned_to=row["assigned_to"],
         completed_by=row["completed_by"],
         created_at=row["created_at"],
         completed_at=row["completed_at"],
@@ -171,6 +173,7 @@ class Database:
                 status TEXT NOT NULL DEFAULT 'open',
                 due_at TEXT,
                 created_by INTEGER,
+                assigned_to INTEGER,
                 completed_by INTEGER,
                 created_at TEXT NOT NULL,
                 completed_at TEXT
@@ -210,6 +213,14 @@ class Database:
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             ("digest_time", DEFAULT_DIGEST_TIME),
         )
+
+        cur = await self.conn.execute("PRAGMA table_info(tasks)")
+        columns = {row[1] for row in await cur.fetchall()}
+        if "assigned_to" not in columns:
+            await self.conn.execute(
+                "ALTER TABLE tasks ADD COLUMN assigned_to INTEGER"
+            )
+
         await self.conn.commit()
 
     async def upsert_user(
@@ -258,6 +269,13 @@ class Database:
     async def list_users(self) -> list[User]:
         cur = await self.conn.execute(
             "SELECT * FROM users ORDER BY created_at ASC"
+        )
+        rows = await cur.fetchall()
+        return [_row_user(r) for r in rows]
+
+    async def list_children(self) -> list[User]:
+        cur = await self.conn.execute(
+            "SELECT * FROM users WHERE role = 'child' ORDER BY created_at ASC"
         )
         rows = await cur.fetchall()
         return [_row_user(r) for r in rows]
@@ -313,16 +331,17 @@ class Database:
         link: str | None,
         due_at: str | None,
         created_by: int,
+        assigned_to: int | None,
         offsets: list[int],
     ) -> Task:
         cur = await self.conn.execute(
             """
             INSERT INTO tasks (
                 title, description, link, status, due_at,
-                created_by, created_at
-            ) VALUES (?, ?, ?, 'open', ?, ?, ?)
+                created_by, assigned_to, created_at
+            ) VALUES (?, ?, ?, 'open', ?, ?, ?, ?)
             """,
-            (title, description, link, due_at, created_by, _now_iso()),
+            (title, description, link, due_at, created_by, assigned_to, _now_iso()),
         )
         task_id = cur.lastrowid
         assert task_id is not None

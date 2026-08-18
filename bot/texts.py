@@ -109,6 +109,10 @@ def ask_due() -> str:
     )
 
 
+def ask_assignee() -> str:
+    return "Кому призначити справу?"
+
+
 def ask_due_required() -> str:
     return (
         "Коли починається? Наприклад: <code>20.08 18:00</code> або <code>завтра 9:00</code>."
@@ -150,6 +154,10 @@ def digest_updated(value: str) -> str:
 
 def saved_ok() -> str:
     return "Thanks! Зберегла ✨"
+
+
+def child_not_registered() -> str:
+    return "Дитина ще не писала боту /start, тому призначити справу поки нікому."
 
 
 def done_ok() -> str:

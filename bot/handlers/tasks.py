@@ -9,6 +9,7 @@ from bot import texts
 from bot.config import MAX_REMINDER_OFFSETS, Settings
 from bot.db import Database, User
 from bot.keyboards import (
+    assign_child_kb,
     cancel_kb,
     confirm_delete_kb,
     due_kb,
@@ -37,6 +38,7 @@ class TaskForm(StatesGroup):
     description = State()
     link = State()
     due = State()
+    assignee = State()
     offsets = State()
 
 
@@ -68,8 +70,12 @@ async def list_tasks(
         if task.created_by and task.created_by in users:
             u = users[task.created_by]
             author = u.full_name or u.username or str(u.telegram_id)
+        assignee = None
+        if task.assigned_to and task.assigned_to in users:
+            au = users[task.assigned_to]
+            assignee = au.full_name or au.username or str(au.telegram_id)
         await message.answer(
-            task_card_html(task, offsets, settings.tz, author),
+            task_card_html(task, offsets, settings.tz, author, assignee),
             reply_markup=task_actions_kb(
                 task.id,
                 can_edit=can_edit_task(db_user, task.created_by),
@@ -197,6 +203,20 @@ async def task_due(
         return
 
     await state.update_data(due_at=due_iso, offsets=[])
+    if db_user.is_parent:
+        children = [u for u in await db.list_children() if u.telegram_id != db_user.telegram_id]
+        if not children:
+            await state.update_data(assigned_to=db_user.telegram_id)
+            await message.answer(texts.child_not_registered())
+        elif len(children) == 1:
+            await state.update_data(assigned_to=children[0].telegram_id)
+        else:
+            await state.set_state(TaskForm.assignee)
+            await message.answer(texts.ask_assignee(), reply_markup=assign_child_kb(children))
+            return
+    else:
+        await state.update_data(assigned_to=db_user.telegram_id)
+
     if due_iso is None:
         await _finish_create(message, state, db, db_user, settings, stickers)
         return
@@ -343,6 +363,7 @@ async def _finish_create(
         link=data.get("link"),
         due_at=due_at,
         created_by=db_user.telegram_id,
+        assigned_to=data.get("assigned_to"),
         offsets=offsets,
     )
     await state.clear()
@@ -371,6 +392,57 @@ async def _save_edit(
     await state.clear()
     await stickers.send_mood(message.bot, message.chat.id, "saved")
     await message.answer(
+        texts.saved_ok() + "\n\n" + task_card_html(task, offsets, settings.tz),
+        reply_markup=main_menu(db_user),
+        disable_web_page_preview=True,
+    )
+
+
+@router.callback_query(F.data.startswith("tassign:"))
+async def task_assign_create(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+    db_user: User,
+    settings: Settings,
+    stickers: StickerService,
+) -> None:
+    await callback.answer()
+    if not callback.message:
+        return
+    assigned_to = int(callback.data.split(":")[1])
+    await state.update_data(assigned_to=assigned_to)
+    data = await state.get_data()
+    if data.get("due_at") is None:
+        await _finish_create(callback.message, state, db, db_user, settings, stickers)
+        return
+    await state.set_state(TaskForm.offsets)
+    await callback.message.answer(
+        texts.ask_remind_offsets([]),
+        reply_markup=remind_preset_kb([]),
+    )
+
+
+@router.callback_query(F.data.startswith("tassignedit:"))
+async def task_assign_edit(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+    db_user: User,
+    settings: Settings,
+    stickers: StickerService,
+) -> None:
+    await callback.answer()
+    if not callback.message or not db_user.is_parent:
+        return
+    _, user_id_s, task_id_s = callback.data.split(":", 2)
+    task_id = int(task_id_s)
+    await db.update_task_fields(task_id, assigned_to=int(user_id_s))
+    task = await db.get_task(task_id)
+    offsets = [o.before_minutes for o in await db.get_offsets("task", task_id)]
+    await state.clear()
+    await stickers.send_mood(callback.bot, callback.message.chat.id, "saved")
+    await callback.message.answer(
         texts.saved_ok() + "\n\n" + task_card_html(task, offsets, settings.tz),
         reply_markup=main_menu(db_user),
         disable_web_page_preview=True,
@@ -526,6 +598,18 @@ async def task_edit_field(
     elif field == "due":
         await state.set_state(TaskForm.due)
         await callback.message.answer(texts.ask_due(), reply_markup=due_kb())
+    elif field == "assignee":
+        if not db_user.is_parent:
+            await callback.message.answer(texts.no_access())
+            return
+        children = [u for u in await db.list_children() if u.telegram_id != db_user.telegram_id]
+        if not children:
+            await callback.message.answer(texts.child_not_registered())
+            return
+        await state.set_state(TaskForm.assignee)
+        await callback.message.answer(
+            texts.ask_assignee(), reply_markup=assign_child_kb(children, task_id=task_id)
+        )
     elif field == "remind":
         if not task.due_at:
             await callback.message.answer("Спочатку задай строк.")

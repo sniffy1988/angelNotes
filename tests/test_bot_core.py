@@ -128,11 +128,13 @@ class DbTests(unittest.IsolatedAsyncioTestCase):
             link="https://example.com",
             due_at="2026-08-18T15:00:00Z",
             created_by=child.telegram_id,
+            assigned_to=child.telegram_id,
             offsets=[10, 60],
         )
         offs = await self.db.get_offsets("task", task.id)
         self.assertEqual([o.before_minutes for o in offs], [60, 10])
 
+        self.assertEqual(task.assigned_to, child.telegram_id)
         self.assertTrue(can_edit_task(child, task.created_by))
         parent_user = await self.db.get_user(1)
         assert parent_user is not None
@@ -205,6 +207,7 @@ class DbTests(unittest.IsolatedAsyncioTestCase):
             link=None,
             due_at="2026-08-18T15:00:00Z",
             created_by=user.telegram_id,
+            assigned_to=user.telegram_id,
             offsets=[10],
         )
         off = (await self.db.get_offsets("task", task.id))[0]
