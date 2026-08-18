@@ -68,7 +68,7 @@ docker compose up -d
 ```bash
 docker compose ps
 docker compose logs adminer --tail 50
-docker compose up -d adminer
+docker compose up -d --build adminer
 ```
 
 Якщо база не відкривається (permission denied) — перезапусти adminer після оновлення compose (контейнер має читати `./data/bot.db`).
@@ -76,9 +76,8 @@ docker compose up -d adminer
 Якщо бот крутиться без Compose, лише Adminer:
 
 ```bash
-docker run --rm -p 8888:8080 -v "$PWD/data:/db" \
-  -v "$PWD/adminer/angelnotes.php:/var/www/html/plugins-enabled/angelnotes.php:ro" \
-  --user 0:0 adminer:4
+docker build -t angelnotes-adminer:local ./adminer
+docker run --rm -p 8888:8080 -v "$PWD/data:/db" --user 0:0 angelnotes-adminer:local
 ```
 
 Без пароля — доступ має лише довірена мережа (не відкривай порт у інтернет).
