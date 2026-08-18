@@ -11,6 +11,7 @@ services:
 
   adminer:
     image: ghcr.io/sniffy1988/angelnotes-adminer:latest
+    pull_policy: always
     container_name: angelnotes-adminer
     user: "0:0"
     ports:
