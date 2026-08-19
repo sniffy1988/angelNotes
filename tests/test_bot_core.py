@@ -6,10 +6,22 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
 from bot.db import Database, ScheduleItem
 from bot.handlers import schedule as schedule_handlers
+from bot.llm import (
+    OllamaClient,
+    OllamaError,
+    OllamaModelError,
+    OllamaTimeoutError,
+    OllamaUnavailableError,
+    append_turn,
+    parse_chat_response,
+    trim_history,
+    truncate_response,
+)
 from bot.middlewares import can_edit_task
 from bot.utils import (
     from_iso,
@@ -284,9 +296,101 @@ class ReminderLogicTests(unittest.TestCase):
         self.assertFalse(schedule_handlers._item_on_day(past_weekly, now, TZ))
 
 
+class LlmTests(unittest.TestCase):
+    def test_trim_history(self) -> None:
+        history = [{"role": "user", "content": f"m{i}"} for i in range(20)]
+        trimmed = trim_history(history, limit=16)
+        self.assertEqual(len(trimmed), 16)
+        self.assertEqual(trimmed[0]["content"], "m4")
+        self.assertEqual(trimmed[-1]["content"], "m19")
+
+    def test_append_turn(self) -> None:
+        history = [{"role": "user", "content": "hi"}]
+        updated = append_turn(history, "next", "reply", limit=4)
+        self.assertEqual(len(updated), 3)
+        self.assertEqual(updated[-1]["content"], "reply")
+
+    def test_truncate_response(self) -> None:
+        self.assertEqual(truncate_response("  hello  "), "hello")
+        long_text = "x" * 4000
+        self.assertTrue(truncate_response(long_text).endswith("…"))
+        self.assertLessEqual(len(truncate_response(long_text)), 3500)
+
+    def test_parse_chat_response(self) -> None:
+        payload = {"message": {"role": "assistant", "content": "  Хе-хе!  "}}
+        self.assertEqual(parse_chat_response(payload), "Хе-хе!")
+
+    def test_parse_chat_response_errors(self) -> None:
+        with self.assertRaises(OllamaError):
+            parse_chat_response({})
+        with self.assertRaises(OllamaError):
+            parse_chat_response({"message": {"content": "   "}})
+
+
+class OllamaClientTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.client = OllamaClient("http://localhost:11434", "qwen2.5:3b", 30.0)
+        await self.client.open()
+
+    async def asyncTearDown(self) -> None:
+        await self.client.close()
+
+    async def test_chat_success(self) -> None:
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "message": {"role": "assistant", "content": "Привіт! 💜"},
+        }
+        with patch.object(
+            self.client.client,
+            "post",
+            new=AsyncMock(return_value=mock_response),
+        ) as post_mock:
+            reply = await self.client.chat([{"role": "user", "content": "hi"}])
+        self.assertEqual(reply, "Привіт! 💜")
+        post_mock.assert_awaited_once()
+        body = post_mock.await_args.kwargs["json"]
+        self.assertFalse(body["stream"])
+        self.assertEqual(body["model"], "qwen2.5:3b")
+
+    async def test_chat_http_error(self) -> None:
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.text = "model not found"
+        with patch.object(
+            self.client.client,
+            "post",
+            new=AsyncMock(return_value=mock_response),
+        ):
+            with self.assertRaises(OllamaModelError):
+                await self.client.chat([{"role": "user", "content": "hi"}])
+
+    async def test_chat_timeout(self) -> None:
+        import httpx
+
+        with patch.object(
+            self.client.client,
+            "post",
+            new=AsyncMock(side_effect=httpx.TimeoutException("timeout")),
+        ):
+            with self.assertRaises(OllamaTimeoutError):
+                await self.client.chat([{"role": "user", "content": "hi"}])
+
+    async def test_chat_unavailable(self) -> None:
+        import httpx
+
+        with patch.object(
+            self.client.client,
+            "post",
+            new=AsyncMock(side_effect=httpx.ConnectError("refused")),
+        ):
+            with self.assertRaises(OllamaUnavailableError):
+                await self.client.chat([{"role": "user", "content": "hi"}])
+
+
 class ImportSmokeTests(unittest.TestCase):
     def test_import_app(self) -> None:
-        from bot.handlers import admin, menu, reminders, schedule, start, tasks
+        from bot.handlers import admin, chat, menu, reminders, schedule, start, tasks
         from bot.main import main
         from bot.reminders import ReminderService
         from bot.stickers import StickerService
@@ -298,6 +402,7 @@ class ImportSmokeTests(unittest.TestCase):
         self.assertTrue(schedule.router)
         self.assertTrue(reminders.router)
         self.assertTrue(admin.router)
+        self.assertTrue(chat.router)
         self.assertTrue(ReminderService)
         self.assertTrue(StickerService)
 

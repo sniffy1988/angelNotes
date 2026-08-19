@@ -21,7 +21,10 @@ def main_menu(user: User) -> ReplyKeyboardMarkup:
         KeyboardButton(text=texts.BTN_TASKS),
         KeyboardButton(text=texts.BTN_SCHEDULE),
     )
-    builder.row(KeyboardButton(text=texts.BTN_ADD))
+    builder.row(
+        KeyboardButton(text=texts.BTN_ADD),
+        KeyboardButton(text=texts.BTN_CHAT),
+    )
     extra: list[KeyboardButton] = []
     if user.is_parent:
         extra.append(KeyboardButton(text=texts.BTN_DIGEST))
@@ -29,6 +32,30 @@ def main_menu(user: User) -> ReplyKeyboardMarkup:
         extra.append(KeyboardButton(text=texts.BTN_ADMIN))
     if extra:
         builder.row(*extra)
+    return builder.as_markup(resize_keyboard=True)
+
+
+def chat_menu(user: User) -> ReplyKeyboardMarkup:
+    builder = ReplyKeyboardBuilder()
+    builder.row(
+        KeyboardButton(text=texts.BTN_TASKS),
+        KeyboardButton(text=texts.BTN_SCHEDULE),
+    )
+    builder.row(
+        KeyboardButton(text=texts.BTN_ADD),
+        KeyboardButton(text=texts.BTN_CHAT),
+    )
+    extra: list[KeyboardButton] = []
+    if user.is_parent:
+        extra.append(KeyboardButton(text=texts.BTN_DIGEST))
+    if user.is_admin:
+        extra.append(KeyboardButton(text=texts.BTN_ADMIN))
+    if extra:
+        builder.row(*extra)
+    builder.row(
+        KeyboardButton(text=texts.BTN_CHAT_NEW),
+        KeyboardButton(text=texts.BTN_CHAT_BYE),
+    )
     return builder.as_markup(resize_keyboard=True)
 
 

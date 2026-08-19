@@ -16,6 +16,9 @@ DEFAULT_TZ = "Europe/Kyiv"
 DEFAULT_DIGEST_TIME = "20:00"
 MAX_REMINDER_OFFSETS = 5
 DEFAULT_REMIND_BEFORE = 10
+DEFAULT_OLLAMA_URL = "http://host.docker.internal:11434"
+DEFAULT_OLLAMA_MODEL = "qwen2.5:3b"
+DEFAULT_OLLAMA_TIMEOUT = 120.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,10 +27,21 @@ class Settings:
     tz_name: str
     sticker_set: str
     db_path: Path
+    ollama_url: str
+    ollama_model: str
+    ollama_timeout: float
 
     @property
     def tz(self) -> ZoneInfo:
         return ZoneInfo(self.tz_name)
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        return float(raw)
+    except ValueError:
+        return default
 
 
 def load_settings() -> Settings:
@@ -46,4 +60,9 @@ def load_settings() -> Settings:
         sticker_set=os.getenv("STICKER_SET", DEFAULT_STICKER_SET).strip()
         or DEFAULT_STICKER_SET,
         db_path=db_path,
+        ollama_url=os.getenv("OLLAMA_URL", DEFAULT_OLLAMA_URL).strip()
+        or DEFAULT_OLLAMA_URL,
+        ollama_model=os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL).strip()
+        or DEFAULT_OLLAMA_MODEL,
+        ollama_timeout=_float_env("OLLAMA_TIMEOUT", DEFAULT_OLLAMA_TIMEOUT),
     )

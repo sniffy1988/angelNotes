@@ -7,6 +7,7 @@
 - Спільні **завдання** (назва, опис, посилання, строк, кілька нагадувань)
 - **Розклад**: щотижневі уроки та разові події
 - Нагадування «як у Google Calendar» + вечірній дайджест
+- **Чат з Куромі** через локальну Ollama (`qwen2.5:3b` за замовчуванням)
 - Ролі `parent` / `child`, прапорець адміна `is_admin` у SQLite
 
 ## Швидкий старт
@@ -92,6 +93,34 @@ docker run --rm -p 8888:8080 -v "$PWD/data:/db" --user 0:0 angelnotes-adminer:lo
 
 Без пароля — доступ має лише довірена мережа (не відкривай порт у інтернет).
 
+## Чат з Куромі (Ollama)
+
+Кнопка **🖤 Поговорити** — вільна розмова з Куромі українською. Бот у Docker звертається до Ollama на Mac-хості.
+
+1. Ollama має бути запущена локально, модель уже стягнута:
+
+```bash
+ollama list   # має бути qwen2.5:3b (або інша з OLLAMA_MODEL)
+```
+
+2. У `.env` (за замовчуванням уже підходить для Docker на Mac):
+
+```bash
+OLLAMA_URL=http://host.docker.internal:11434
+OLLAMA_MODEL=qwen2.5:3b
+OLLAMA_TIMEOUT=120
+```
+
+3. Перезапусти бота після змін:
+
+```bash
+docker compose up -d
+```
+
+Якщо модель відповідає повільно або «ламає» персонажа — спробуй `qwen2.5:7b` у `OLLAMA_MODEL`.
+
+Локально без Docker: `OLLAMA_URL=http://127.0.0.1:11434`.
+
 ## Змінні середовища
 
 | Змінна | Опис | За замовчуванням |
@@ -100,6 +129,9 @@ docker run --rm -p 8888:8080 -v "$PWD/data:/db" --user 0:0 angelnotes-adminer:lo
 | `TZ` | часовий пояс | `Europe/Kyiv` |
 | `STICKER_SET` | ім’я стікерпаку | `kuuuuurrrrooommmiii_by_e4zybot` |
 | `DB_PATH` | шлях до SQLite | `data/bot.db` |
+| `OLLAMA_URL` | URL Ollama API | `http://host.docker.internal:11434` |
+| `OLLAMA_MODEL` | модель для чату | `qwen2.5:3b` |
+| `OLLAMA_TIMEOUT` | таймаут запиту, сек | `120` |
 
 ## Ролі та адмін
 
@@ -110,6 +142,7 @@ docker run --rm -p 8888:8080 -v "$PWD/data:/db" --user 0:0 angelnotes-adminer:lo
 | Редагувати / видаляти справи | усі | лише свої |
 | Розклад (усі слоти) | так | так |
 | Час дайджесту | так | ні |
+| Чат з Куромі | так | так |
 | Адмін-панель | якщо `is_admin` | якщо `is_admin` |
 
 Адмін у боті: кнопка `🛡 Адмін` або `/admin` — список користувачів, зміна ролі, прапорець адміна.
@@ -140,6 +173,7 @@ bot/
   db.py
   texts.py
   stickers.py
+  llm.py
   keyboards.py
   middlewares.py
   reminders.py

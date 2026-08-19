@@ -1,7 +1,8 @@
-from bot.handlers import admin, menu, reminders, schedule, start, tasks
+from bot.handlers import admin, chat, menu, reminders, schedule, start, tasks
 
 __all__ = [
     "admin",
+    "chat",
     "menu",
     "reminders",
     "schedule",
