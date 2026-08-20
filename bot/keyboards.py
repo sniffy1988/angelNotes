@@ -145,6 +145,7 @@ def add_kind_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="Завдання", callback_data="add:task")
     builder.button(text="Урок (щотижня)", callback_data="add:weekly")
+    builder.button(text="Щодня", callback_data="add:daily")
     builder.button(text="Подія", callback_data="add:once")
     builder.adjust(1)
     return builder.as_markup()
@@ -206,6 +207,13 @@ def schedule_edit_fields_kb(item_id: int, kind: str) -> InlineKeyboardMarkup:
         fields.extend(
             [
                 ("weekday", "День"),
+                ("start_time", "Початок"),
+                ("end_time", "Кінець"),
+            ]
+        )
+    elif kind == "daily":
+        fields.extend(
+            [
                 ("start_time", "Початок"),
                 ("end_time", "Кінець"),
             ]

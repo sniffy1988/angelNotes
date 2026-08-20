@@ -37,7 +37,7 @@ async def add_kind_chosen(
         from bot.handlers.tasks import begin_add_task
 
         await begin_add_task(callback.message, state)
-    elif kind in {"weekly", "once"}:
+    elif kind in {"weekly", "daily", "once"}:
         from bot.handlers.schedule import begin_add_schedule
 
         await begin_add_schedule(callback.message, state, kind=kind)

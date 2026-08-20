@@ -31,6 +31,7 @@ from bot.utils import (
     compact_time_to_hhmm,
     from_iso,
     is_url,
+    next_daily_occurrence,
     next_weekly_occurrence,
     normalize_offsets,
     parse_due,
@@ -77,6 +78,10 @@ def _next_occurrence(item: ScheduleItem, tz, now: datetime) -> datetime | None:
         if item.weekday is None or not item.start_time:
             return None
         return next_weekly_occurrence(item.weekday, item.start_time, tz, now)
+    if item.kind == "daily":
+        if not item.start_time:
+            return None
+        return next_daily_occurrence(item.start_time, tz, now)
     if not item.starts_at:
         return None
     starts = from_iso(item.starts_at, tz)
@@ -86,11 +91,15 @@ def _next_occurrence(item: ScheduleItem, tz, now: datetime) -> datetime | None:
 
 
 def _item_on_day(item: ScheduleItem, day: datetime, tz) -> bool:
+    if item.kind == "daily":
+        return bool(item.start_time)
     occurrence = _next_occurrence(item, tz, day)
     return bool(occurrence and occurrence.date() == day.date())
 
 
 def _item_in_week(item: ScheduleItem, start: datetime, end: datetime, tz) -> bool:
+    if item.kind == "daily":
+        return bool(item.start_time)
     occurrence = _next_occurrence(item, tz, start)
     return bool(occurrence and start <= occurrence < end)
 
@@ -244,9 +253,16 @@ async def sch_link(
         return
 
     await state.update_data(link=link)
-    if data.get("kind") == "weekly":
+    kind = data.get("kind")
+    if kind == "weekly":
         await state.set_state(ScheduleForm.weekday)
         await message.answer(texts.ask_weekday(), reply_markup=weekday_kb())
+    elif kind == "daily":
+        await state.set_state(ScheduleForm.start_time)
+        await message.answer(
+            texts.ask_start_time(),
+            reply_markup=time_preset_kb("wtime"),
+        )
     else:
         await state.set_state(ScheduleForm.starts_at)
         await message.answer(texts.ask_due_required(), reply_markup=due_kb(required=True))

@@ -12,7 +12,7 @@ from bot.config import DEFAULT_DIGEST_TIME
 
 Role = Literal["parent", "child"]
 TargetType = Literal["task", "schedule"]
-ScheduleKind = Literal["weekly", "once"]
+ScheduleKind = Literal["weekly", "daily", "once"]
 TaskStatus = Literal["open", "done"]
 
 
@@ -475,7 +475,11 @@ class Database:
             """
             SELECT * FROM schedule_items
             ORDER BY
-                CASE kind WHEN 'weekly' THEN 0 ELSE 1 END,
+                CASE kind
+                    WHEN 'daily' THEN 0
+                    WHEN 'weekly' THEN 1
+                    ELSE 2
+                END,
                 weekday ASC,
                 start_time ASC,
                 starts_at ASC,

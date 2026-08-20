@@ -26,6 +26,7 @@ from bot.middlewares import can_edit_task
 from bot.utils import (
     from_iso,
     is_url,
+    next_daily_occurrence,
     next_weekly_occurrence,
     normalize_offsets,
     parse_digest_time,
@@ -103,6 +104,17 @@ class UtilsTests(unittest.TestCase):
         now2 = datetime(2026, 8, 19, 10, 0, tzinfo=TZ)
         nxt2 = next_weekly_occurrence(2, "09:00", TZ, now=now2)
         self.assertEqual(nxt2.day, 26)
+
+    def test_next_daily(self) -> None:
+        now = datetime(2026, 8, 20, 10, 0, tzinfo=TZ)
+        same_day = next_daily_occurrence("21:00", TZ, now=now)
+        self.assertEqual(same_day.day, 20)
+        self.assertEqual(same_day.hour, 21)
+
+        later = datetime(2026, 8, 20, 21, 30, tzinfo=TZ)
+        next_day = next_daily_occurrence("21:00", TZ, now=later)
+        self.assertEqual(next_day.day, 21)
+        self.assertEqual(next_day.hour, 21)
 
 
 class DbTests(unittest.IsolatedAsyncioTestCase):
@@ -193,6 +205,19 @@ class DbTests(unittest.IsolatedAsyncioTestCase):
             created_by=user.telegram_id,
             offsets=[10],
         )
+        daily = await self.db.create_schedule(
+            kind="daily",
+            title="Читання",
+            description=None,
+            link=None,
+            weekday=None,
+            start_time="21:00",
+            end_time=None,
+            starts_at=None,
+            ends_at=None,
+            created_by=user.telegram_id,
+            offsets=[0],
+        )
         once = await self.db.create_schedule(
             kind="once",
             title="Концерт",
@@ -207,8 +232,10 @@ class DbTests(unittest.IsolatedAsyncioTestCase):
             offsets=[60, 1440],
         )
         items = await self.db.list_schedule()
-        self.assertEqual(len(items), 2)
+        self.assertEqual(len(items), 3)
+        self.assertEqual(items[0].kind, "daily")
         self.assertEqual(weekly.kind, "weekly")
+        self.assertEqual(daily.start_time, "21:00")
         self.assertEqual(once.kind, "once")
         self.assertEqual(len(await self.db.get_offsets("schedule", once.id)), 2)
 
@@ -290,10 +317,26 @@ class ReminderLogicTests(unittest.TestCase):
             created_by=1,
             created_at="2026-08-17T06:00:00Z",
         )
+        daily = ScheduleItem(
+            id=4,
+            kind="daily",
+            title="Reading",
+            description=None,
+            link=None,
+            weekday=None,
+            start_time="21:00",
+            end_time=None,
+            starts_at=None,
+            ends_at=None,
+            created_by=1,
+            created_at="2026-08-17T06:00:00Z",
+        )
 
         self.assertFalse(schedule_handlers._item_in_week(past_once, start, end, TZ))
         self.assertTrue(schedule_handlers._item_in_week(future_once, start, end, TZ))
         self.assertFalse(schedule_handlers._item_on_day(past_weekly, now, TZ))
+        self.assertTrue(schedule_handlers._item_on_day(daily, now, TZ))
+        self.assertTrue(schedule_handlers._item_in_week(daily, start, end, TZ))
 
 
 class LlmTests(unittest.TestCase):

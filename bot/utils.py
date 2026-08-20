@@ -210,27 +210,6 @@ def task_card_html(
     return "\n".join(lines)
 
 
-def schedule_card_html(item, offsets: list[int], tz: ZoneInfo) -> str:
-    lines = [f"<b>{escape_html(item.title)}</b>"]
-    if item.kind == "weekly":
-        day = texts.WEEKDAYS_FULL[item.weekday or 0]
-        time_part = item.start_time or "??:??"
-        if item.end_time:
-            time_part = f"{time_part}–{item.end_time}"
-        lines.append(f"Щотижня: {day}, {time_part}")
-    else:
-        lines.append(f"Подія: {format_dt_iso(item.starts_at, tz)}")
-        if item.ends_at:
-            lines.append(f"До: {format_dt_iso(item.ends_at, tz)}")
-    if item.description:
-        lines.append(escape_html(item.description))
-    if item.link:
-        lines.append(f'<a href="{escape_html(item.link)}">посилання</a>')
-    lines.append(f"Нагадати: {texts.format_offsets(offsets)}")
-    lines.append(f"#{item.id}")
-    return "\n".join(lines)
-
-
 def next_weekly_occurrence(
     weekday: int,
     start_time: str,
@@ -250,18 +229,60 @@ def next_weekly_occurrence(
     return candidate
 
 
+def next_daily_occurrence(
+    start_time: str,
+    tz: ZoneInfo,
+    now: datetime | None = None,
+) -> datetime:
+    """Next daily slot at HH:MM (strictly after now)."""
+    now = now or datetime.now(tz)
+    h, m = map(int, start_time.split(":"))
+    candidate = now.replace(hour=h, minute=m, second=0, microsecond=0)
+    if candidate <= now:
+        candidate += timedelta(days=1)
+    return candidate
+
+
 def occurrence_for_schedule(item, tz: ZoneInfo, now: datetime | None = None) -> datetime | None:
     now = now or datetime.now(tz)
     if item.kind == "once":
         if not item.starts_at:
             return None
         return from_iso(item.starts_at, tz)
-    if item.weekday is None or not item.start_time:
+    if not item.start_time:
         return None
-    # For reminder checks we need the occurrence that is currently relevant:
-    # today's if not yet passed relative to remind window, else next week.
     h, m = map(int, item.start_time.split(":"))
     today = now.replace(hour=h, minute=m, second=0, microsecond=0)
+    if item.kind == "daily":
+        return today
+    if item.weekday is None:
+        return None
     if now.weekday() == item.weekday:
         return today
     return next_weekly_occurrence(item.weekday, item.start_time, tz, now)
+
+
+def schedule_card_html(item, offsets: list[int], tz: ZoneInfo) -> str:
+    lines = [f"<b>{escape_html(item.title)}</b>"]
+    if item.kind == "weekly":
+        day = texts.WEEKDAYS_FULL[item.weekday or 0]
+        time_part = item.start_time or "??:??"
+        if item.end_time:
+            time_part = f"{time_part}–{item.end_time}"
+        lines.append(f"Щотижня: {day}, {time_part}")
+    elif item.kind == "daily":
+        time_part = item.start_time or "??:??"
+        if item.end_time:
+            time_part = f"{time_part}–{item.end_time}"
+        lines.append(f"Щодня: {time_part}")
+    else:
+        lines.append(f"Подія: {format_dt_iso(item.starts_at, tz)}")
+        if item.ends_at:
+            lines.append(f"До: {format_dt_iso(item.ends_at, tz)}")
+    if item.description:
+        lines.append(escape_html(item.description))
+    if item.link:
+        lines.append(f'<a href="{escape_html(item.link)}">посилання</a>')
+    lines.append(f"Нагадати: {texts.format_offsets(offsets)}")
+    lines.append(f"#{item.id}")
+    return "\n".join(lines)

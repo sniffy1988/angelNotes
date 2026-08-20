@@ -17,6 +17,7 @@ from bot.utils import (
     escape_html,
     format_dt,
     from_iso,
+    next_daily_occurrence,
     next_weekly_occurrence,
     to_iso,
 )
@@ -91,12 +92,21 @@ class ReminderService:
                 return None
             return from_iso(item.starts_at, self.settings.tz)
 
-        if item.weekday is None or not item.start_time:
+        if not item.start_time:
             return None
 
         h, m = map(int, item.start_time.split(":"))
+        today = now.replace(hour=h, minute=m, second=0, microsecond=0)
+
+        if item.kind == "daily":
+            if today >= now or (now - today) <= timedelta(hours=2):
+                return today
+            return next_daily_occurrence(item.start_time, self.settings.tz, now)
+
+        if item.weekday is None:
+            return None
+
         if now.weekday() == item.weekday:
-            today = now.replace(hour=h, minute=m, second=0, microsecond=0)
             # Keep today's slot while still inside the late-reminder window;
             # otherwise jump to next week so "за 1 день" keeps working.
             if today >= now or (now - today) <= timedelta(hours=2):
@@ -213,7 +223,11 @@ class ReminderService:
 
         schedule_lines: list[str] = []
         for item in await self.db.list_schedule():
-            if item.kind == "weekly" and item.weekday == tomorrow.weekday():
+            if item.kind == "daily" and item.start_time:
+                schedule_lines.append(
+                    f"• {escape_html(item.title)} о {item.start_time} (щодня)"
+                )
+            elif item.kind == "weekly" and item.weekday == tomorrow.weekday():
                 schedule_lines.append(
                     f"• {escape_html(item.title)} о {item.start_time or '??:??'}"
                 )
