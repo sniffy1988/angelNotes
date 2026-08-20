@@ -50,15 +50,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Build and push adminer
-        uses: docker/build-push-action@v6
-        with:
-          context: ./adminer
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/sniffy1988/angelnotes-adminer:latest
-            ghcr.io/sniffy1988/angelnotes-adminer:sha-${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max

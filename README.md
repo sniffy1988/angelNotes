@@ -55,43 +55,30 @@ docker compose up -d
 ```
 
 Репозиторій **публічний** — `docker pull` з GHCR зазвичай без логіну (після того, як пакет теж public). Якщо pull просить логін: Package settings → Change visibility → Public.
-### Веб-морда до БД (Adminer)
+### Веб-морда до БД (sqlite-web)
 
-Разом із ботом піднімається [Adminer](https://www.adminer.org/) на порт **8888**.
+Разом із ботом піднімається [sqlite-web](https://github.com/coleifer/sqlite-web) на порт **8888** — одразу відкриває `bot.db`, без логіну й вибору «SQLite 3».
 
 1. Відкрий `http://<IP-сервера>:8888` (локально: http://127.0.0.1:8888)
-2. **System:** SQLite 3
-3. **Database:** `/db/bot.db`
-4. **Username / Password:** залиш порожніми → Login
-
-Adminer збирається в GHCR як `ghcr.io/sniffy1988/angelnotes-adminer:latest` (разом із ботом у `image.yml`).
-
-Якщо сторінка не відкривається або помилка `plugins-enabled/angelnotes.php`:
-
-```bash
-git pull
-# якщо раніше був битий mount — angelnotes.php міг стати папкою:
-rm -rf adminer/angelnotes.php && git checkout -- adminer/angelnotes.php
-
-docker compose stop adminer
-docker compose rm -f adminer
-docker compose pull adminer
-docker compose up -d adminer
-docker compose exec adminer ls -la /var/www/html/plugins-enabled/
-```
-
-Остання команда має показати файл `001-angelnotes.php`, не папку.
-
-Якщо база не відкривається (permission denied) — перезапусти adminer після оновлення compose (контейнер має читати `./data/bot.db`).
-
-Локально без GHCR:
-
-```bash
-docker build -t angelnotes-adminer:local ./adminer
-docker run --rm -p 8888:8080 -v "$PWD/data:/db" --user 0:0 angelnotes-adminer:local
-```
+2. У таблиці `users` / `tasks` / … можна дивитись і правити рядки
 
 Без пароля — доступ має лише довірена мережа (не відкривай порт у інтернет).
+
+Якщо старий контейнер Adminer ще крутиться:
+
+```bash
+docker compose stop adminer
+docker compose rm -f adminer
+docker compose pull
+docker compose up -d
+```
+
+Локально вручну:
+
+```bash
+docker run --rm -p 8888:8080 -v "$PWD/data:/data" --user 0:0 \
+  ghcr.io/coleifer/sqlite-web:latest bot.db --host 0.0.0.0 --port 8080
+```
 
 ## Чат з Куромі (Ollama)
 

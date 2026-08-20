@@ -63,7 +63,7 @@ async def list_tasks(
     settings: Settings,
     stickers: StickerService,
 ) -> None:
-    tasks = await db.list_tasks()
+    tasks = await db.list_tasks(status="open")
     if not tasks:
         await stickers.send_mood(message.bot, message.chat.id, "empty")
         await message.answer(texts.empty_tasks(), reply_markup=main_menu(db_user))
